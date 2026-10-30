@@ -1,4 +1,4 @@
-# Dieters Base Build Simulator
+# ReZort Protocol
 
 Browser-Ego-Shooter mit Base Building: Baue zwischen den Wellen Mauern, Böden und Türme, verteidige den Reaktor gegen Roboterwellen und kämpfe dich durch fünf Zonen mit Zonenbossen.
 
