@@ -166,7 +166,13 @@ button.primary:focus-visible{outline:2px solid var(--fg);outline-offset:3px}
 .credit{font-size:12px;color:var(--muted)}
 .actions.sub{gap:10px}
 #pLex{max-width:820px}
-.lexGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;max-height:56vh;overflow-y:auto;padding-right:4px}
+.lexScroll{max-height:60vh;overflow-y:auto;padding-right:4px}
+.lexGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.lexHead{font-family:var(--display);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
+.lexHead:first-child{margin-top:0}
+.lex.perk{border-left:3px solid var(--cyan)}
+.lex.perk b{color:var(--cyan)}
+.lex.perk b small{color:var(--accent)}
 .lex{background:var(--bg);border:1px solid var(--panel-edge);padding:12px 14px;display:flex;flex-direction:column;gap:6px}
 .lex b{font-family:var(--display);font-size:16px;letter-spacing:.04em;color:var(--accent)}
 .lex b small{font-size:11px;color:var(--danger);letter-spacing:.12em;text-transform:uppercase;margin-left:6px}
@@ -292,9 +298,13 @@ button.ghost:focus-visible{outline:2px solid var(--fg);outline-offset:3px}
 
     <section class="panel" id="pLex" hidden>
       <p class="eyebrow" id="lexCount">Lexikon</p>
-      <h2>Gegner-Lexikon</h2>
-      <div class="lexGrid" id="lexGrid"></div>
-      <div class="actions"><button class="ghost back" type="button">Zurück</button></div>
+      <h2>Lexikon</h2>
+      <div class="lexScroll">
+        <div id="lexPerkWrap" hidden><h3 class="lexHead">Deine Eigenschaften</h3><div class="lexGrid" id="lexPerks"></div></div>
+        <h3 class="lexHead">Gegner</h3>
+        <div class="lexGrid" id="lexGrid"></div>
+      </div>
+      <div class="actions"><button class="ghost" id="btnLexBack" type="button">Zurück</button></div>
     </section>
 
     <section class="panel" id="pHelp" hidden>
@@ -344,7 +354,7 @@ button.ghost:focus-visible{outline:2px solid var(--fg);outline-offset:3px}
         <label>Effekte <input type="range" class="sfxVol" min="0" max="1.5" step="0.05" aria-label="Lautstärke Effekte"></label>
         <p class="gpuInfo"></p>
       </div>
-      <div class="actions"><button class="primary" id="btnResume" type="button">Weiter</button><button class="ghost" id="btnQuit" type="button">Spiel abbrechen</button></div>
+      <div class="actions"><button class="primary" id="btnResume" type="button">Weiter</button><button class="ghost" id="btnLexPause" type="button">Lexikon</button><button class="ghost" id="btnQuit" type="button">Spiel abbrechen</button></div>
     </section>
 
     <section class="panel" id="pUp" hidden>
@@ -4274,8 +4284,15 @@ function renderLexicon(){
   $('lexGrid').innerHTML=LEX.map(([t,name,desc,tip])=>lexSeen.has(t)
     ?`<div class="lex"><b>${name}${TYPES[t]&&TYPES[t].boss?' <small>Boss</small>':''}</b><p>${desc}</p><p class="tip">${tip}</p></div>`
     :`<div class="lex unknown"><b>???</b><p>Noch nicht begegnet.</p></div>`).join('');
-  $('lexCount').textContent=`${LEX.filter(l=>lexSeen.has(l[0])).length} von ${LEX.length} entdeckt`;
+  $('lexCount').textContent=`${LEX.filter(l=>lexSeen.has(l[0])).length} von ${LEX.length} Gegnern entdeckt`;
+  // In einer laufenden Partie: auch die gewonnenen Eigenschaften zeigen
+  const inGame=lexFrom==='pause';$('lexPerkWrap').hidden=!inGame;
+  if(inGame){const ids=Object.keys(P.taken);
+    $('lexPerks').innerHTML=ids.length?ids.map(id=>{const p=PERKS.find(x=>x.id===id);if(!p)return '';const n=P.taken[id];
+      return `<div class="lex perk"><b>${p.name}${n>1?` <small>×${n}</small>`:''}</b><p>${p.desc}</p>${n>1&&p.more?`<p class="tip">${p.more}</p>`:''}</div>`;}).join('')
+      :'<div class="lex unknown"><b>Noch keine</b><p>Eigenschaften gibt es nach jeder Zone und aus Versorgungskisten.</p></div>';}
 }
+let lexFrom='menu';
 /* ---------- Spielstand: nach jeder Zone speichern ---------- */
 const SAVE_KEY='dbbs-save';
 function saveGame(){
@@ -4968,7 +4985,9 @@ $('btnQuit').addEventListener('click',()=>{
 });
 $('btnRetry').addEventListener('click',()=>{state='menu';resetGame();lockPointer();});
 $('btnContinue').addEventListener('click',continueGame);
-$('btnLex').addEventListener('click',()=>{renderLexicon();setPanel('pLex');});
+$('btnLex').addEventListener('click',()=>{lexFrom='menu';renderLexicon();setPanel('pLex');});
+$('btnLexPause').addEventListener('click',()=>{lexFrom='pause';renderLexicon();setPanel('pLex');});
+$('btnLexBack').addEventListener('click',()=>setPanel(lexFrom==='pause'?'pPause':'pMenu'));
 $('btnHelp').addEventListener('click',()=>setPanel('pHelp'));
 $('btnSet').addEventListener('click',()=>setPanel('pSet'));
 document.querySelectorAll('.back').forEach(b=>b.addEventListener('click',()=>setPanel('pMenu')));
