@@ -1517,10 +1517,10 @@ function damageBlock(i,j,dmg){
 
 /* ---------- Verteidigungstürme ---------- */
 const TOWERS={
-  tesla:{name:'Blitzturm',cost:45,hp:400,h:6,key:'5',kind:'t',fp:3},
-  flak:{name:'Flakturm',cost:30,hp:300,h:7,key:'6',kind:'t',fp:3},
+  tesla:{name:'Blitzturm',cost:45,hp:400,h:5,key:'5',kind:'t',fp:3},
+  flak:{name:'Flakturm',cost:30,hp:300,h:5,key:'6',kind:'t',fp:3},
   shroom:{name:'Pilzturm',cost:55,hp:300,h:2,key:'7',kind:'t'},
-  gatling:{name:'Gatlingturm',cost:50,hp:350,h:6,key:'8',kind:'t',fp:3}
+  gatling:{name:'Gatlingturm',cost:50,hp:350,h:5,key:'8',kind:'t',fp:3}
 };
 Object.assign(BLOCKS,TOWERS);BLOCK_ORDER.push('tesla','flak','shroom','gatling');
 const towerSlots=new Map(),towerList=[];
@@ -1556,14 +1556,14 @@ function pillar(g,h,mat){
 function buildTower(el){
   const g=new THREE.Group(),T=BLOCKS[el.type],tw={type:el.type,g,cd:1+Math.random(),shots:0,shotT:0,spin:0,scan:Math.random()*6};
   if(el.type==='tesla'){
-    const H=pillar(g,3,TM.steel);
+    const H=pillar(g,2,TM.steel);
     for(let k=0;k<4;k++)tMesh(TG.tor(.3-k*.03,.035),TM.copper,0,H-.9+k*.18,0,g).rotation.x=Math.PI/2;
     tMesh(TG.cyl(.08,.12,.5),TM.dark,0,H-.1,0,g);
     tw.orb=tMesh(TG.sph(.3),TM.glowCyan,0,H+.3,0,g);tw.orb.castShadow=false;
     tw.light=new THREE.PointLight(C(0x7fe8ff),1.2,6,2);tw.light.position.set(0,H+.3,0);g.add(tw.light);
     tw.muzzle=new THREE.Vector3(0,H+.3,0);
   }else if(el.type==='flak'){
-    const H=pillar(g,4,TM.dark);
+    const H=pillar(g,2,TM.dark);
     tMesh(TG.cyl(.38,.42,.14),TM.steel,0,H+.07,0,g);
     tw.yaw=new THREE.Group();tw.yaw.position.y=H+.2;g.add(tw.yaw);
     tMesh(TG.box(.5,.3,.5),TM.steel,0,.1,0,tw.yaw);
@@ -1582,7 +1582,7 @@ function buildTower(el){
     tw.pulse=0;
   }else if(BUILD_EXTRA[el.type]){BUILD_EXTRA[el.type](g,tw,el);
   }else{ // gatling
-    const H=pillar(g,3,TM.steel);
+    const H=pillar(g,2,TM.steel);
     tMesh(TG.cyl(.34,.38,.12),TM.dark,0,H+.06,0,g);
     tw.yaw=new THREE.Group();tw.yaw.position.y=H+.2;g.add(tw.yaw);
     tMesh(TG.box(.46,.34,.56),TM.dark,0,.08,-.05,tw.yaw);
@@ -1704,6 +1704,10 @@ const TUP={
   gen:{power:[6,9,12],txt:['+3 Energie','+3 Energie']}
 };
 const LV=el=>el.lvl||1;
+// Reichweiten in Metern; jede Ebene, auf der ein Turm höher steht, bringt +15 % (bis Ebene 4)
+const TRANGE={tesla:12,gatling:16,flak:24,rail:26};
+const heightMul=el=>1+.15*Math.min(el.L||0,4);
+const tRange=el=>(TRANGE[el.type]||0)*heightMul(el);
 const TV=(el,k)=>TUP[el.type][k][LV(el)-1];
 const upgradeCost=el=>Math.round(costOf(el.type)*(LV(el)===1?.6:1));
 const repairCost=b=>Math.max(1,Math.ceil(costOf(b.type)*(1-b.hp/b.maxHp)*.6));
@@ -1741,7 +1745,7 @@ const UPLOOK={
     }
   },
   tesla(tw,lv,add){
-    const H=3*CELL;
+    const H=2*CELL;
     if(lv>=2){ // kreisende Ladungskugeln und zusätzliche Spulen
       const sg=new THREE.Group();sg.position.y=H+.3;tw.g.add(sg);add(sg);tw.sats=sg;
       for(let k=0;k<3;k++){const a=k*Math.PI*2/3,o=tMesh(TG.sph(.07,10),upMat.cyan,Math.cos(a)*.55,0,Math.sin(a)*.55,sg);o.castShadow=false;}
@@ -1812,7 +1816,7 @@ function updateTowers(dt,active){
       const s=(tw.orbS||1)*(1+Math.sin(tt*6+el.i)*.08);tw.orb.scale.setScalar(s);if(tw.sats)tw.sats.rotation.y+=dt*2.6;tw.light.intensity=1.1+Math.sin(tt*13)*.3;
       if(Math.random()<dt*2.5){const o=base.clone().add(tw.muzzle),r=o.clone().add(new THREE.Vector3((Math.random()-.5)*1.4,(Math.random()-.3)*.8,(Math.random()-.5)*1.4));burst(r,1,0x9fe8ff,.5);}
       if(!active||tw.cd>0)continue;
-      const o=base.clone().add(tw.muzzle),list=towerTargets(o,20,e=>true);
+      const o=base.clone().add(tw.muzzle),list=towerTargets(o,tRange(el),e=>true);
       if(!list.length)continue;
       tw.cd=TV(el,'cd');const main=list[0].e,pm=enemyCenter(main,new THREE.Vector3());
       lightning(o,pm);damageEnemy(main,TV(el,'dmg'),pm.clone(),false,pm.clone().sub(o).normalize(),true);
@@ -1826,7 +1830,7 @@ function updateTowers(dt,active){
       if(tw.pulse>=1.6){tw.pulse-=1.6;slowPulse(base.clone().setY(base.y+.05),SLOW_R*TV(el,'r'));}
     }else if(UPDATE_EXTRA[tw.type]){UPDATE_EXTRA[tw.type](el,tw,dt,active);
     }else{ // flak und gatling
-      const air=tw.type==='flak',range=air?50:30;
+      const air=tw.type==='flak',range=tRange(el);
       tw.yaw.getWorldPosition(_ec2);
       const list=active?towerTargets(_ec2,range,e=>air?e.t.kind==='flyer':e.t.kind!=='flyer'):[];
       let tgt=null;
@@ -1876,7 +1880,7 @@ Object.assign(TOWERS,{
   emp:{name:'EMP-Turm',cost:55,hp:250,h:3,kind:'t'},
   repair:{name:'Reparaturmast',cost:45,hp:200,h:2,kind:'t'},
   flame:{name:'Flammenturm',cost:50,hp:300,h:2,kind:'t'},
-  rail:{name:'Railgun-Turm',cost:70,hp:300,h:7,kind:'t',fp:3},
+  rail:{name:'Railgun-Turm',cost:70,hp:300,h:5,kind:'t',fp:3},
   gen:{name:'Generator',cost:30,hp:250,h:2,kind:'t'},
   fence:{name:'Laserzaun',cost:12,hp:300,h:2,kind:'t'}
 });
@@ -1993,7 +1997,7 @@ const BUILD_EXTRA={
     tw.muzzleLocal=new THREE.Vector3(0,0,.7);tw.fire=0;
   },
   rail(g,tw){
-    const H=pillar(g,4,TM.dark);
+    const H=pillar(g,2,TM.dark);
     tw.yaw=new THREE.Group();tw.yaw.position.y=H+.15;g.add(tw.yaw);
     tMesh(TG.box(.5,.3,.7),TM.steel,0,.05,-.1,tw.yaw);
     for(const x of[-.15,.15])tMesh(TG.box(.08,.1,.5),TM2.purple,x,.22,-.1,tw.yaw).castShadow=false;
@@ -2096,8 +2100,8 @@ const UPDATE_EXTRA={
       if(Math.random()<dt*30){tw.pitch.updateMatrixWorld(true);burst(tw.pitch.localToWorld(new THREE.Vector3(0,0,.2)),1,0xc070ff,.6);}
       if(tw.charge<=0){
         tw.pitch.updateMatrixWorld(true);
-        const from=tw.pitch.localToWorld(tw.muzzleLocal.clone()),dir=c.clone().sub(from).normalize(),end=from.clone().addScaledVector(dir,48);
-        const w=wallHit(from,end,el),len=w?from.distanceTo(w.point):48,stop=from.clone().addScaledVector(dir,len);
+        const RL=tRange(el)+4,from=tw.pitch.localToWorld(tw.muzzleLocal.clone()),dir=c.clone().sub(from).normalize(),end=from.clone().addScaledVector(dir,RL);
+        const w=wallHit(from,end,el),len=w?from.distanceTo(w.point):RL,stop=from.clone().addScaledVector(dir,len);
         beam(from,stop,0xffffff,5,.25);beam(from,stop,0xc070ff,16,.45);
         {const dp=from.distanceTo(player.pos);if(!playSample('rail',.6*Math.max(.3,1-dp/70),.97+Math.random()*.06))sfx.rail();}
         // durchschlägt alle Bodengegner auf der Linie
@@ -2112,7 +2116,7 @@ const UPDATE_EXTRA={
       return;
     }
     if(!active||tw.cd>0)return;
-    const list=towerTargets(_ec2,45,groundFoe).filter(c=>!wallHit(_ec2.clone().setY(_ec2.y+.2),enemyCenter(c.e,new THREE.Vector3()),el));
+    const list=towerTargets(_ec2,tRange(el),groundFoe).filter(c=>!wallHit(_ec2.clone().setY(_ec2.y+.2),enemyCenter(c.e,new THREE.Vector3()),el));
     if(!list.length)return;
     tw.tgt=list.reduce((a,b)=>b.e.hp>a.e.hp?b:a).e;tw.charge=.8;sfx.railCharge();
   }
@@ -4275,6 +4279,10 @@ function drawRadar(dt){
     g.fillStyle=boss?'#ffb020':e.elite?'#c070ff':'#ff3b2f';
     g.beginPath();if(fly){g.moveTo(x,y-r-1);g.lineTo(x+r,y+r);g.lineTo(x-r,y+r);g.closePath();}else g.arc(x,y,r,0,Math.PI*2);g.fill();
   }
+  if(phase==='build'&&state!=='menu'&&zoneWave<ZONE_WAVES&&!(zoneDoneT>0)){const sec=planSectors(upcomingPlan());
+    g.strokeStyle='rgba(255,59,47,.85)';g.lineWidth=5;
+    for(const [a,spr] of(sec||[[0,Math.PI]])){g.beginPath();let first=true;for(let t=a-spr;t<=a+spr+1e-3;t+=.04){const dx=Math.cos(t),dz=Math.sin(t),sx=dx*rx+dz*rz,sy=-(dx*fx+dz*fz),l=Math.hypot(sx,sy)||1,px=c+sx/l*(c-4),py=c+sy/l*(c-4);first?g.moveTo(px,py):g.lineTo(px,py);first=false;}g.stroke();}
+    g.lineWidth=1;}
   g.restore();
   // Spieler in der Mitte, Blickrichtung nach oben
   g.fillStyle='#ffffff';g.beginPath();g.moveTo(c,c-6);g.lineTo(c+4,c+4);g.lineTo(c,c+2);g.lineTo(c-4,c+4);g.closePath();g.fill();
@@ -4944,6 +4952,53 @@ function planWave(n,opts,zw){
   const tempo=theme==='horde'||(n>=4&&Math.random()<.2)?.55:1;
   return {n,zone,zw,bossList,boss,w,list,obj:boss?null:pickObjective(zw),sm,tempo};
 }
+// Richtung als Himmelsrichtung (Norden = vom Reaktor aus nach vorne, also -z)
+function compass(a){const x=Math.cos(a),z=Math.sin(a),deg=(Math.atan2(x,-z)*180/Math.PI+360)%360;
+  return ['Norden','Nordosten','Osten','Südosten','Süden','Südwesten','Westen','Nordwesten'][Math.round(deg/45)%8];}
+function planSectors(pl){const sm=pl.sm;return sm.kind==='ring'?null:sm.kind==='flank'?[[sm.a,.55]]:[[sm.a,.4],[sm.a+Math.PI,.4]];}
+function planDirText(pl){const sec=planSectors(pl);if(!sec)return 'von allen Seiten';return 'aus '+sec.map(([a])=>compass(a)).join(' und ');}
+// Welche Rampen in die Senke werden die Gegner der nächsten Welle nehmen? (Weg übers Reaktor-Flussfeld nachverfolgt)
+let rampUse=null,rampUseKey='';
+function predictRamps(pl){
+  const key=pl.n+'|'+blocksVersion+'|'+zone;if(rampUseKey===key&&rampUse)return rampUse;
+  if(!navReady)return null;
+  rampUseKey=key;const use=new Map();
+  const sec=planSectors(pl)||[[0,Math.PI]];
+  for(const [a,spr] of sec)for(let k=0;k<10;k++){
+    const ang=a+(k/9-.5)*2*spr;let x=Math.cos(ang)*(ARENA-7),z=Math.sin(ang)*(ARENA-7);
+    for(let st=0;st<400;st++){
+      if(Math.max(Math.abs(x),Math.abs(z))<S0-.5)break;
+      for(const r of terrRamps){if(r.h0===0&&x>=r.x0&&x<=r.x1&&z>=r.z0&&z<=r.z1){use.set(r,(use.get(r)||0)+1);st=999;break;}}
+      if(st>=999)break;
+      const n=navNext(x,z,navDistR);if(!n)break;x=(n[0]-NAV_OFF)*CELL;z=(n[1]-NAV_OFF)*CELL;
+    }
+  }
+  rampUse=use;return use;
+}
+const rampMarks=[];
+const rampMarkMat=new THREE.MeshBasicMaterial({color:GLOW(0xff3b2f,2),transparent:true,opacity:.35,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,toneMapped:false});
+const dirBeams=[];const dirBeamMat=new THREE.MeshBasicMaterial({color:GLOW(0xff3b2f,2.4),transparent:true,opacity:.3,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false,fog:false});
+function clearAttackMarks(){rampMarks.forEach(m=>scene.remove(m));rampMarks.length=0;dirBeams.forEach(m=>scene.remove(m));dirBeams.length=0;}
+let attackMarkKey='';
+function updateAttackMarks(show){
+  if(!show){if(attackMarkKey){clearAttackMarks();attackMarkKey='';}return;}
+  const pl=upcomingPlan(),use=predictRamps(pl);
+  const key=pl.n+'|'+zone+'|'+(use?[...use.values()].join(','):'')+'|'+rampUseKey;
+  if(key!==attackMarkKey){
+    attackMarkKey=key;clearAttackMarks();
+    // rote Lichtsäulen am Kartenrand, wo die Gegner auftauchen
+    for(const [a,spr] of(planSectors(pl)||[]))for(let k=-1;k<=1;k++){const ang=a+k*spr*.8,R=ARENA-6,x=Math.cos(ang)*R,z=Math.sin(ang)*R;
+      const m=new THREE.Mesh(new THREE.CylinderGeometry(.5,1.4,40,12,1,true),dirBeamMat);m.position.set(x,terrainH(x,z)+20,z);scene.add(m);dirBeams.push(m);}
+    // Hauptzugänge: Rampen rot einfärben, je stärker genutzt desto heller
+    if(use){const mx=Math.max(1,...use.values());for(const [r,c] of use){
+      const e=.08,P=[[r.x0+e,r.z0+e],[r.x1-e,r.z0+e],[r.x1-e,r.z1-e],[r.x0+e,r.z1-e]].map(([x,z])=>[x,terrainH(x,z)+.09,z]);
+      const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute([...P[0],...P[1],...P[2],...P[0],...P[2],...P[3]],3));
+      const m=new THREE.Mesh(geo,rampMarkMat.clone());m.material.opacity=.18+.32*(c/mx);m.userData.base=m.material.opacity;
+      scene.add(m);rampMarks.push(m);}}
+  }
+  const tt=clock.elapsedTime;rampMarks.forEach(m=>m.material.opacity=m.userData.base*(.7+.3*Math.sin(tt*4)));
+  dirBeamMat.opacity=.22+Math.sin(tt*3)*.08;
+}
 function upcomingPlan(){
   const zw=zoneWave+1;
   if(!nextPlan||nextPlan.zone!==zone||nextPlan.zw!==zw){
@@ -4961,7 +5016,7 @@ function startWave(n,opts,plan){
   toSpawn=list;spawnTimer=.8;
   startObjective(plan.obj);
   spawnMode=plan.sm;spawnTempo=plan.tempo;
-  const dirTxt={ring:'von allen Seiten',flank:'von einer Seite',pincer:'von zwei Seiten'}[spawnMode.kind];
+  const dirTxt=planDirText(plan);
   list.forEach(t=>lexMeet(t));
   const neu=w.newly.length?'Neu: '+w.newly.map(t=>SING[t]||t).join(', '):'';
   const top=Object.entries(w.count).sort((a,b)=>b[1]-a[1])[0];
@@ -5014,8 +5069,18 @@ function placeReason(i,j,L,spent,extra,assumeSupport){
   else if(kind!=='f'&&FC.some(([a,b])=>[...Array(TH)].some((_,k)=>playerBlocks(a,b,L+k))))reason='Du stehst im Weg';
   return reason;
 }
+// Reichweitenkreis: beim Platzieren eines Turms und beim Anvisieren eines gebauten Turms
+const rangeRing=new THREE.Mesh(new THREE.RingGeometry(.985,1,128),new THREE.MeshBasicMaterial({color:GLOW(0x3fd2ff,2.2),transparent:true,opacity:.75,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,toneMapped:false}));
+const rangeDisc=new THREE.Mesh(new THREE.CircleGeometry(1,96),new THREE.MeshBasicMaterial({color:GLOW(0x3fd2ff,.6),transparent:true,opacity:.07,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,toneMapped:false}));
+rangeRing.rotation.x=rangeDisc.rotation.x=-Math.PI/2;rangeRing.visible=rangeDisc.visible=false;scene.add(rangeRing,rangeDisc);
+function rangeOf(type,L){if(TRANGE[type])return TRANGE[type]*(1+.15*Math.min(L||0,4));if(type==='shroom')return SLOW_R;if(type==='repair')return 10;return 0;}
+function showRange(x,z,R,ok){
+  rangeRing.visible=rangeDisc.visible=R>0;if(!R)return;
+  rangeRing.position.set(x,.07,z);rangeDisc.position.set(x,.065,z);rangeRing.scale.setScalar(R);rangeDisc.scale.setScalar(R);
+  rangeRing.material.color.copy(GLOW(ok?0x3fd2ff:0xff4433,2.2));
+}
 function updateBuild(){
-  ghost.visible=false;buildTarget=null;fencePrev.visible=false;
+  ghost.visible=false;buildTarget=null;fencePrev.visible=false;rangeRing.visible=rangeDisc.visible=false;
   if(!buildMode)return;
   camera.updateMatrixWorld();bRay.setFromCamera(NDC0,camera);
   const h=bRay.intersectObjects(blockMeshes.concat([floor]),false)[0];
@@ -5038,6 +5103,8 @@ function updateBuild(){
   }
   const reason=placeReason(i,j,L,0);
   buildTarget={i,j,L,Lh,reason,rem:hitBlock};
+  if(kind==='t')showRange(i*CELL,j*CELL,rangeOf(selBlock,L),!reason);
+  else if(hitBlock&&hitBlock.kind==='t')showRange(hitBlock.i*CELL,hitBlock.j*CELL,hitBlock.tw?(TRANGE[hitBlock.type]?tRange(hitBlock):rangeOf(hitBlock.type,hitBlock.L)):0,true);
   const flat=kind==='f';
   ghostBox.scale.y=ghostEdges.scale.y=flat?FT/CELL:TH;ghostBox.scale.x=ghostBox.scale.z=ghostEdges.scale.x=ghostEdges.scale.z=kind==='t'?fpOf(selBlock):1;
   ghostBox.position.y=ghostEdges.position.y=flat?FT/2:CELL*TH/2;
@@ -5673,7 +5740,7 @@ function updateHud(remaining){
   if(buildMode){
     const sig=selBlock+'|'+money+'|'+buildCat+'|'+towerList.length+'|'+P.costMul+'|'+P.towerMax+'|'+powerCap();
     if(cache.slots!==sig){cache.slots=sig;
-      ui.slots.innerHTML=`<div class="cat">${buildCat==='blocks'?'Bauteile':'Türme'} <span><kbd>T</kbd>${buildCat==='blocks'?'Türme':'Bauteile'}</span>${buildCat==='towers'?`<span class="pw${powerUse()>powerCap()?' over':''}">Energie ${powerUse()}/${powerCap()}</span>`:''}</div>`+CATS[buildCat].map((k,n)=>{const b=BLOCKS[k];return `<div class="slot${k===selBlock?' sel':''}${money<costOf(k)?' poor':''}"><kbd>${(n+1)%10}</kbd><b>${b.name}</b><span>R$ ${costOf(k)} · ${b.double?'2 × ':''}${b.hp} LP${b.kind==='t'?` · ${k==='gen'?'+'+GEN_POWER:(POWER[k]||0)} ⚡ · ${towerList.filter(t=>t.type===k).length}/${k==='fence'?FENCE_MAX:P.towerMax}`:''}</span></div>`;}).join('');}
+      ui.slots.innerHTML=`<div class="cat">${buildCat==='blocks'?'Bauteile':'Türme'} <span><kbd>T</kbd>${buildCat==='blocks'?'Türme':'Bauteile'}</span>${buildCat==='towers'?`<span class="pw${powerUse()>powerCap()?' over':''}">Energie ${powerUse()}/${powerCap()}</span>`:''}</div>`+CATS[buildCat].map((k,n)=>{const b=BLOCKS[k];return `<div class="slot${k===selBlock?' sel':''}${money<costOf(k)?' poor':''}"><kbd>${(n+1)%10}</kbd><b>${b.name}</b><span>R$ ${costOf(k)} · ${b.double?'2 × ':''}${b.hp} LP${b.kind==='t'?` · ${k==='gen'?'+'+GEN_POWER:(POWER[k]||0)} ⚡${TRANGE[k]?' · '+TRANGE[k]+' m':''} · ${towerList.filter(t=>t.type===k).length}/${k==='fence'?FENCE_MAX:P.towerMax}`:''}</span></div>`;}).join('');}
   }
   if(hintTimer>0){hintTimer-=dt_last;if(hintTimer<=0)ui.hint.classList.remove('show');}
   const bosses=enemies.filter(e=>e.t.boss&&e.state!=='die');
@@ -5701,15 +5768,17 @@ function updateHud(remaining){
    if(show){const pl=upcomingPlan(),w=pl.w;
      const cnt={};pl.list.forEach(t=>cnt[t]=(cnt[t]||0)+1);
      const comp=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).map(([t,c])=>`${c}× ${SING[t]||(TYPES[t]&&TYPES[t].name)||t}`).join(', ');
-     const dir={ring:'von allen Seiten',flank:'von einer Seite',pincer:'von zwei Seiten'}[pl.sm.kind];
+     const dir=planDirText(pl);
+     const use=predictRamps(pl);const rampTxt=use&&use.size?[...use.entries()].sort((a,b)=>b[1]-a[1]).map(([r])=>'Rampe '+(r.axis==='z'?(r.dir>0?'Süd':'Nord'):(r.dir>0?'Ost':'West'))).join(', '):'';
      const title=pl.boss?`Zonenboss: ${TYPES[pl.bossList[0]].name}`:`Welle ${pl.zw}/${ZONE_WAVES}`+(w.name?` – ${w.name}`:'');
-     html=`<h4>Nächste Welle</h4><div class="t">${title}</div><div>${pl.list.length} Gegner · ${dir}${pl.tempo<1?' · Ansturm':''}</div><div class="m">${comp}</div>`+
+     html=`<h4>Nächste Welle</h4><div class="t">${title}</div><div>${pl.list.length} Gegner · ${dir}${pl.tempo<1?' · Ansturm':''}</div>${rampTxt?`<div class="tw">Hauptzugang: ${rampTxt}</div>`:''}<div class="m">${comp}</div>`+
        (w.newly.length?`<div class="tw">Neu: ${w.newly.map(t=>SING[t]||t).join(', ')}</div>`:'')+
        (pl.obj?`<div class="tw">Aufgabe: ${OBJ_INFO[pl.obj].name}</div>`:'');
      if(lastLosses){const L=Object.entries(lastLosses).sort((a,b)=>(BLOCKS[b[0]].kind==='t')-(BLOCKS[a[0]].kind==='t')||b[1]-a[1]);
        html+=`<div class="sec"><h4>Letzte Welle zerstört</h4>`+(L.length?L.map(([t,c])=>`<div${BLOCKS[t].kind==='t'?' class="tw"':''}>${BLOCKS[t].name} ×${c}</div>`).join(''):'<div class="ok">Nichts verloren</div>')+`</div>`;}
    }
-   if(cache.wi!==html){cache.wi=html;const wi=$('waveInfo');wi.innerHTML=html;wi.hidden=!html;}}
+   if(cache.wi!==html){cache.wi=html;const wi=$('waveInfo');wi.innerHTML=html;wi.hidden=!html;}
+   updateAttackMarks(show);}
   setText(ui.scoreNum,'s',score.toLocaleString('de-DE'));
   {const ws=['rifle','shotgun','launcher'].filter(hasW),key=state+'|'+curW+'|'+ws.join()+'|'+JSON.stringify(P.taken)+'|'+nades;
    if(cache.kit!==key){cache.kit=key;const kh=$('kitHud');kh.hidden=state==='menu';
