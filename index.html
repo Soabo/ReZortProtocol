@@ -977,6 +977,21 @@ const coreRings=[1.55,2.35].map(y=>{const r=new THREE.Mesh(new THREE.TorusGeomet
 // Streben vom Sockel zum Kern
 const coreLight=new THREE.PointLight(C(0x3fd2ff),2,12,2);coreG.add(coreLight);
 const CORE_POS=new THREE.Vector3(0,1.95,0);
+// Wer es in die Senke schafft, schießt aus bis zu 13 m auf den Reaktor – aber nur mit freier Sicht
+const _coreRay=new THREE.Raycaster();
+function coreRangedAttack(e,dt,cd){
+  e.coreShotT=(e.coreShotT==null?.8+Math.random()*1.2:e.coreShotT)-dt;
+  if(e.coreShotT>0)return;
+  e.coreShotT=2.4+Math.random()*.8;
+  // Schusslinie in Brusthöhe: eine doppelt hohe Mauer blockiert sie, eine einfache nicht
+  const from=enemyCenter(e,new THREE.Vector3()).setY(e.g.position.y+1.1),to=CORE_POS.clone().setY(1.2);
+  const dir=to.clone().sub(from),len=dir.length();dir.normalize();
+  _coreRay.set(from,dir);_coreRay.far=len-1.1;
+  if(_coreRay.intersectObjects(blockMeshes.concat(solidMeshes),false).length)return;   // Mauer dazwischen: kein Schuss
+  beam(from,to.clone().add(new THREE.Vector3((Math.random()-.5)*.6,(Math.random()-.5)*.6,(Math.random()-.5)*.6)),0xff4a3a,3,.12);burst(from,3,0xff6a4a,2);
+  damageCore(Math.max(2,e.t.dmg*.5));
+  if(Math.random()<.5)sfx.laser&&sfx.laser();
+}
 function damageCore(dmg){
   if(state!=='playing'||core.hp<=0)return;
   dmg*=P.coreArmor||1;core.hp=Math.max(0,core.hp-dmg);core.flash=1;core.dmgT=3;
@@ -1509,7 +1524,9 @@ function nearBoxes(x,z,r){
   return _near;
 }
 function damageBlock(i,j,dmg){
-  const b=wallAt(i,j,0)||fenceAt(i,j);if(!b)return;
+  let b=wallAt(i,j,0)||fenceAt(i,j);if(!b)return;
+  // gestapelte Mauern halten zusammen: Schaden geht zuerst an das oberste Teil der Säule
+  if(b.kind==='w'){let L=0;while(L<MAX_LEVELS){const up=els.get(ekey(i,j,L+1,'w'));if(!up)break;L++;b=up;}}
   const c=new THREE.Vector3(i*CELL,.5,j*CELL);burst(c,6,b.type==='steel'?0xc8e0ff:0xffc860,3.5);
   sfx.blockHit(b.type==='steel');
   damageEl(b,dmg);
@@ -1706,6 +1723,7 @@ const TUP={
 const LV=el=>el.lvl||1;
 // Reichweiten in Metern; jede Ebene, auf der ein Turm höher steht, bringt +15 % (bis Ebene 4)
 const TRANGE={tesla:12,gatling:16,flak:24,rail:26};
+const CORE_NOTOWER=8;   // Störfeld um den Reaktor: hier nur Mauern und Böden
 const heightMul=el=>1+.15*Math.min(el.L||0,4);
 const tRange=el=>(TRANGE[el.type]||0)*heightMul(el);
 const TV=(el,k)=>TUP[el.type][k][LV(el)-1];
@@ -2721,7 +2739,9 @@ function spiderBlast(e){
   if(e.state==='die')return;
   e.state='die';
   const p=e.g.position.clone();p.y=.55;
-  const tb=e.tgt&&groundEl(e.tgt[0],e.tgt[1]);
+  let tb=e.tgt&&groundEl(e.tgt[0],e.tgt[1]);
+  // bei gestapelten Mauern trifft es zuerst das oberste Teil
+  if(tb&&tb.kind==='w'){let L=0;while(L<MAX_LEVELS){const up=els.get(ekey(tb.i,tb.j,L+1,'w'));if(!up)break;L++;tb=up;}}
   if(tb){
     // Ziel garantiert treffen: Stahlmauern und Stahlböden fallen sofort, Titan verliert viel
     if(tb.type==='steel'||tb.type==='plate')damageEl(tb,220);
@@ -3617,6 +3637,23 @@ function updateSwarm(e,dt){
 
 /* ---------- Brandkrabbe: Flammenwerfer gegen Spieler und Bauten ---------- */
 const CRAB_FLAME={range:7.6,dot:.7,dps:18,bdps:80,dur:1.9,cd:3,size:1,vol:2.6,wide:2.4,puff:1.6};
+const WALL_HOPPERS={runner:1,phantom:1,crab:1};
+function wallHop(e,col){
+  const [ci,cj]=col,b=wallAt(ci,cj,0);
+  if(!b||b.kind!=='w'||wallAt(ci,cj,1)||towerAt(ci,cj,0))return false;
+  const g=e.g,cx=ci*CELL,cz=cj*CELL,dx=cx-g.position.x,dz=cz-g.position.z,d=Math.hypot(dx,dz)||1;
+  // Landepunkt hinter der Mauer
+  for(const extra of[1.1,1.6,2.2]){
+    const x=cx+dx/d*extra,z=cz+dz/d*extra,li=Math.round(x/CELL),lj=Math.round(z/CELL);
+    if(wallAt(li,lj,0)||fenceAt(li,lj)||navBlocked(toNav(x),toNav(z)))continue;
+    const y0=g.position.y;
+    e.leap={t:0,dur:.55,x0:g.position.x,z0:g.position.z,y0,x1:x,z1:z,y1:terrainH(x,z),arc:1.5};
+    burst(g.position.clone().setY(y0+.2),6,0x8a7a6a,2);
+    if(e.acts){e.acts.move.fadeOut(.1);e.acts.idle.reset().fadeIn(.1).play();}
+    return true;
+  }
+  return false;
+}
 // Brandkrabbe springt über Geländekanten, wenn das den Weg deutlich abkürzt
 function crabLeap(e,dt){
   const g=e.g;
@@ -4318,7 +4355,7 @@ function updateDmgNums(dt){
 /* ---------- Gegner-Lexikon ---------- */
 const LEX=[
   ['grunt','Wächter','Standard-Kampfroboter. Wirft Frisbees, die einmal von Wänden abprallen.','Kopftreffer zählen doppelt. Hinter Mauern bist du vor Frisbees sicher.'],
-  ['runner','Läufer','Kleiner, sehr schneller Zweibeiner mit wenig Panzerung.','Ein Schuss genügt – das Auge ist der Schwachpunkt.'],
+  ['runner','Läufer','Kleiner, sehr schneller Zweibeiner mit wenig Panzerung. Springt über einfache Mauern – nur doppelt hohe halten ihn auf.','Ein Schuss genügt – das Auge ist der Schwachpunkt.'],
   ['spider','Sprengspinne','Läuft direkt zu deinen Bauten und sprengt sich dort. Du hörst ihre Schritte.','Früh abschießen, bevor sie die Mauer erreicht.'],
   ['brute','Koloss','Schwerer Roboter mit Railgun auf dem Rücken. Springt mit Schockwelle und lädt die Railgun auf.','Beim Aufladen der Railgun seitlich ausweichen.'],
   ['bomber','Bomber','Rotordrohne, fliegt hoch über der Karte und wirft Bomben auf dich.','Flak- und Blitzturm treffen Flieger. Nach dem Abwurf dreht er ab.'],
@@ -4327,9 +4364,9 @@ const LEX=[
   ['sniper','Scharfschütze','Zielt mit rotem Laser aus der Distanz, dann folgt ein harter Schuss.','Wenn der Laser blinkt: sofort zur Seite.'],
   ['medic','Sanitätsdrohne','Legt einen grünen Schild um einen Schützling, der dann keinen Schaden nimmt, und repariert ihn. Hält 15–20 m Abstand.','Zuerst die Drohne abschießen – erst dann ist der Schützling verwundbar.'],
   ['splitter','Teiler','Zerfällt beim Tod in drei schnelle Splitter.','Platz lassen oder mit Flächenschaden nachsetzen.'],
-  ['phantom','Phantom','Fast unsichtbar, nur die Augen schimmern. Türme sehen es nicht.','Ab 7 m oder nach einem Treffer wird es sichtbar.'],
+  ['phantom','Phantom','Fast unsichtbar, nur die Augen schimmern. Türme sehen es nicht. Springt über einfache Mauern.','Ab 7 m oder nach einem Treffer wird es sichtbar.'],
   ['swarm','Schwarmdrohnen','Fünf kleine Kamikaze-Drohnen, die auf dich zufliegen.','Jede Drohne fällt mit einem Treffer. Die Schrotflinte ist ideal.'],
-  ['crab','Brandkrabbe','Breiter Flammenstoß gegen dich und deine Mauern. Springt über Geländekanten hinauf und hinunter.','Abstand halten – die Flammen reichen rund 7 m und gehen in die Breite.'],
+  ['crab','Brandkrabbe','Breiter Flammenstoß gegen dich und deine Mauern. Springt über Geländekanten und einfache Mauern.','Abstand halten – die Flammen reichen rund 7 m und gehen in die Breite.'],
   ['jammer','Störsender','Legt alle Türme im violetten Ring (14 m) lahm – auch Laserzäune. Schickt alle paar Sekunden einen violetten Lichtimpuls in den Himmel.','Sofort ausschalten, bevor er deine Verteidigung abschaltet.'],
   ['siege','Belagerungspanzer','Feuert Artillerie aus 12–36 m auf Türme und auf dich.','Türme kommen nicht ran – du musst selbst hin.'],
   ['pioneer','Pionier','Baut in der Nähe deiner Basis einen kleinen Geschützturm mit Schildkuppel. Der Turm sprengt sich nach 30 Sekunden selbst.','Den Pionier vor dem Bau stoppen. Kurz vor der Explosion blinkt und piept er – Abstand halten.'],
@@ -5057,6 +5094,7 @@ function placeReason(i,j,L,spent,extra,assumeSupport){
   let reason='';const bt=BLOCKS[selBlock],kind=bt.kind,TH=kind==='t'||bt.double?bt.h:1;
   const FC=kind==='t'?fpCells(i,j,selBlock):[[i,j]],big=FC.length>1;
   if(!FC.every(([a,b])=>inZone(a,b)))reason=big?'Zu nah am Rand oder am Reaktor (braucht 3×3 Felder)':Math.abs(i)<=1&&Math.abs(j)<=1?'Hier steht der Reaktor':'Außerhalb der Baufläche';
+  else if(kind==='t'&&FC.some(([a,b])=>Math.hypot(a*CELL,b*CELL)<CORE_NOTOWER))reason=`Störfeld des Reaktors: keine Türme näher als ${CORE_NOTOWER} m`;
   else if(L+TH>MAX_LEVELS)reason='Maximal 15 Ebenen hoch';
   else if(kind!=='f'&&FC.some(([a,b])=>wallAt(a,b,L)))reason=big?'Kein Platz – der Turm braucht 3×3 freie Felder':'Feld ist belegt';
   else if(kind==='t'&&towerList.filter(t=>t.type===selBlock).length>=(selBlock==='fence'?FENCE_MAX:P.towerMax))reason=selBlock==='fence'?`Maximal ${FENCE_MAX} Laserzaun-Pfosten`:`Maximal ${P.towerMax} Türme dieser Art`;
@@ -5073,6 +5111,9 @@ function placeReason(i,j,L,spent,extra,assumeSupport){
 const rangeRing=new THREE.Mesh(new THREE.RingGeometry(.985,1,128),new THREE.MeshBasicMaterial({color:GLOW(0x3fd2ff,2.2),transparent:true,opacity:.75,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,toneMapped:false}));
 const rangeDisc=new THREE.Mesh(new THREE.CircleGeometry(1,96),new THREE.MeshBasicMaterial({color:GLOW(0x3fd2ff,.6),transparent:true,opacity:.07,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,toneMapped:false}));
 rangeRing.rotation.x=rangeDisc.rotation.x=-Math.PI/2;rangeRing.visible=rangeDisc.visible=false;scene.add(rangeRing,rangeDisc);
+const noTowerRing=new THREE.Mesh(new THREE.RingGeometry(CORE_NOTOWER-.12,CORE_NOTOWER,128),new THREE.MeshBasicMaterial({color:GLOW(0xb04dff,2.4),transparent:true,opacity:.7,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,toneMapped:false}));
+const noTowerDisc=new THREE.Mesh(new THREE.CircleGeometry(CORE_NOTOWER,96),new THREE.MeshBasicMaterial({color:GLOW(0xb04dff,.8),transparent:true,opacity:.08,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,toneMapped:false}));
+noTowerRing.rotation.x=noTowerDisc.rotation.x=-Math.PI/2;noTowerRing.position.y=.075;noTowerDisc.position.y=.07;noTowerRing.visible=noTowerDisc.visible=false;scene.add(noTowerRing,noTowerDisc);
 function rangeOf(type,L){if(TRANGE[type])return TRANGE[type]*(1+.15*Math.min(L||0,4));if(type==='shroom')return SLOW_R;if(type==='repair')return 10;return 0;}
 function showRange(x,z,R,ok){
   rangeRing.visible=rangeDisc.visible=R>0;if(!R)return;
@@ -5081,6 +5122,7 @@ function showRange(x,z,R,ok){
 }
 function updateBuild(){
   ghost.visible=false;buildTarget=null;fencePrev.visible=false;rangeRing.visible=rangeDisc.visible=false;
+  noTowerRing.visible=noTowerDisc.visible=buildMode&&BLOCKS[selBlock]&&BLOCKS[selBlock].kind==='t';
   if(!buildMode)return;
   camera.updateMatrixWorld();bRay.setFromCamera(NDC0,camera);
   const h=bRay.intersectObjects(blockMeshes.concat([floor]),false)[0];
@@ -5361,7 +5403,7 @@ function fireShotgunFocus(shells){
   // Schaden: wie fast alle Kugeln auf einem Punkt, mit vollem Magazin etwas stärker
   const base=(9+5*k)*P.dmgMul;
   if(hits.length){
-    const h=hits[0],e=h.object.userData.enemy,dist=h.distance,fall=dist<25?1:dist<40?.8:.55;
+    const h=hits[0],e=h.object.userData.enemy,dist=h.distance,fall=dist<12.5?1:dist<20?.6:.25;   // volle Wirkung nur bis 12,5 m
     if(outsideDome(player.pos)&&genDome()&&ray.ray.intersectSphere(genDome(),_domeAt)&&hits[0].distance>_domeAt.distanceTo(ray.ray.origin)){domeDeflect(_domeAt.clone());}
     else if(h.object.userData.objective){hitObjective(h.object.userData.objective,base*fall,h.point);}
     else if(e&&h.object.userData.shield){hitShield(e,h.point,base*fall);}
@@ -5577,6 +5619,7 @@ function updateEnemies(dt){
       if(e.punch<=0)playMove(e);
       continue;
     }
+    if(e.leap&&e.robot&&!e.jets){crabLeap(e,dt);continue;}
     if(t.special==='brute'&&e.robot&&bruteAbilities(e,dt,dist))continue;
     if(e.aura)titanAura(e,dt);
     if(e.jets)updateBoxerHover(e,dt);
@@ -5596,6 +5639,7 @@ function updateEnemies(dt){
     e.aggro=sameLevel&&dist<(e.aggro?14:9);
     const goCore=!e.hunter&&!e.aggro&&core.hp>0;
     const cd=coreDist(g.position.x,g.position.z);
+    if(goCore&&cd<13&&cd>e.radius+1.8&&e.robot)coreRangedAttack(e,dt,cd);
     let tx=goCore?0:player.pos.x,tz=goCore?0:player.pos.z,attackCol=null;
     const direct=goCore?cd<3.2:dist<3.5&&sameLevel;
     if(goCore&&cd<e.radius+1.25){
@@ -5616,6 +5660,8 @@ function updateEnemies(dt){
     const fx=(attackCol?attackCol[0]*CELL:tx)-g.position.x,fz=(attackCol?attackCol[1]*CELL:tz)-g.position.z;
     g.rotation.y=Math.atan2(fx,fz);
     e.cool-=dt;
+    // Springer (Läufer, Phantom, Brandkrabbe) hüpfen über einfache Mauern, nur doppelte halten sie auf
+    if(attackCol&&WALL_HOPPERS[e.type]&&!e.leap&&e.robot&&wallHop(e,attackCol))continue;
     if(attackCol){
       if(e.cool<=0){
         e.cool=1.2;e.punchCol=attackCol;e.punchCore=false;e.stuckT=0;
