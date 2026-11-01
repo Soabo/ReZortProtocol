@@ -5380,6 +5380,31 @@ const focusLaser=new THREE.Mesh(new THREE.CylinderGeometry(.006,.006,1,6),focusL
 const focusDot=new THREE.Mesh(new THREE.SphereGeometry(.045,10,8),new THREE.MeshBasicMaterial({color:GLOW(0xff3040,9),toneMapped:false}));focusDot.visible=false;scene.add(focusDot);
 const _fr=new THREE.Raycaster(),_fo=new THREE.Vector3(),_fd=new THREE.Vector3();
 function aimTargets(){const t=solidMeshes.concat(blockMeshes,objMeshes);enemies.forEach(e=>{if(e.state!=='die'&&!e.burrowed)t.push(...e.parts);});return t;}
+// Raketenwerfer im Granatwerfer-Modus: Flugbahn und Einschlagstelle vorab anzeigen (gleiche Physik wie der Schuss)
+const LOB_PTS=90;
+const lobLine=new THREE.Line(new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute(new Float32Array(LOB_PTS*3),3)),
+  new THREE.LineDashedMaterial({color:GLOW(0xffa040,3),dashSize:.35,gapSize:.25,transparent:true,opacity:.85,toneMapped:false,depthWrite:false}));
+lobLine.frustumCulled=false;lobLine.visible=false;scene.add(lobLine);
+const lobRing=new THREE.Mesh(new THREE.RingGeometry(.94,1,64),new THREE.MeshBasicMaterial({color:GLOW(0xff7a20,3),transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,toneMapped:false}));
+const lobDisc=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshBasicMaterial({color:GLOW(0xff7a20,1),transparent:true,opacity:.12,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,toneMapped:false}));
+lobRing.rotation.x=lobDisc.rotation.x=-Math.PI/2;lobRing.visible=lobDisc.visible=false;scene.add(lobRing,lobDisc);
+function updateLobPreview(){
+  const on=lobT>.6&&state==='playing'&&curW==='launcher'&&!buildMode;
+  lobLine.visible=lobRing.visible=lobDisc.visible=on;if(!on)return;
+  const dir=new THREE.Vector3();camera.getWorldDirection(dir);
+  const p=camera.position.clone().addScaledVector(dir,.8),v=dir.multiplyScalar(23).add(new THREE.Vector3(0,7.5,0));
+  const arr=lobLine.geometry.attributes.position.array;let n=0,hit=null;const st=.05;
+  for(let k=0;k<LOB_PTS*2&&n<LOB_PTS;k++){
+    if(k%2===0){arr[n*3]=p.x;arr[n*3+1]=p.y;arr[n*3+2]=p.z;n++;}
+    v.y-=16*st;p.addScaledVector(v,st);
+    const gt=groundTop(p.x,p.z);if(p.y<=gt+.05){hit=p.clone().setY(gt);break;}
+  }
+  if(hit&&n<LOB_PTS){arr[n*3]=hit.x;arr[n*3+1]=hit.y;arr[n*3+2]=hit.z;n++;}
+  for(let k=n;k<LOB_PTS;k++){arr[k*3]=arr[(n-1)*3];arr[k*3+1]=arr[(n-1)*3+1];arr[k*3+2]=arr[(n-1)*3+2];}
+  lobLine.geometry.attributes.position.needsUpdate=true;lobLine.geometry.setDrawRange(0,n);lobLine.computeLineDistances();
+  lobRing.visible=lobDisc.visible=!!hit;
+  if(hit){const R=4.6,pu=1+Math.sin(clock.elapsedTime*6)*.03;lobRing.position.copy(hit).setY(hit.y+.08);lobDisc.position.copy(hit).setY(hit.y+.07);lobRing.scale.setScalar(R*pu);lobDisc.scale.setScalar(R);}
+}
 function updateFocusLaser(){
   const on=focusT>.3&&state==='playing'&&curW==='shotgun';
   focusLaser.visible=focusDot.visible=on;if(!on)return;
@@ -5745,7 +5770,7 @@ function updateWeapon(dt,hs){
   // Zielfernrohr: Waffe wandert mit dem Fernrohr in die Bildmitte, dann öffnet sich das Overlay
   focusT=clamp(focusT+(aimHeld&&!buildMode&&curW==='shotgun'&&reloading<=0?dt/.12:-dt/.1),0,1);
   lobT=clamp(lobT+(aimHeld&&!buildMode&&curW==='launcher'?dt/.18:-dt/.14),0,1);
-  updateFocusLaser();
+  updateFocusLaser();updateLobPreview();
   const wantAim=aimHeld&&reloading<=0&&!buildMode&&curW==='rifle';
   adsT=clamp(adsT+(wantAim?dt/.16:-dt/.11),0,1);
   const a=adsT*adsT*(3-2*adsT),h=1-a;
